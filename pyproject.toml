@@ -4,12 +4,16 @@ version = "0.1.0"
 description = "Tool to manage active git branches"
 authors = ["Richard van der Hoff <richard@matrix.org>"]
 readme = "README.md"
+packages = [ { include = "manage_active_branches" } ]
 
 [tool.poetry.dependencies]
 python = "^3.8"
 
 [tool.poetry.dev-dependencies]
 mypy = "*"
+
+[tool.poetry.scripts]
+manage_active_branches = "manage_active_branches.__main__:main"
 
 [build-system]
 requires = ["poetry-core"]
