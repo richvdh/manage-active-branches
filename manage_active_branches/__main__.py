@@ -75,7 +75,7 @@ class Manager:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(required=True, metavar="subcommand")
 
     add_parser = subparsers.add_parser(
         "add", help="Add new branch to list of tracked branches"
