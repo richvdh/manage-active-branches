@@ -10,10 +10,7 @@ from typing import TextIO
 
 class Manager:
     def __init__(self):
-        self._git_dir = subprocess.run(
-            ("git", "rev-parse", "--path-format=absolute", "--git-dir"),
-            stdout=subprocess.PIPE,
-        ).stdout.strip()
+        self._git_dir = run_cmd("git", "rev-parse", "--path-format=absolute", "--git-dir")
 
     def _branches_file_name(self) -> bytes:
         return os.path.join(self._git_dir, b"active-branches")
@@ -26,7 +23,10 @@ class Manager:
                 raise
             return open(self._branches_file_name(), "x+")
 
-    def add_branch(self, branch_name: str) -> int:
+    def add_branch(self, branch_name: str|None) -> int:
+        if branch_name is None:
+            branch_name = run_cmd("git", "rev-parse", "--abbrev-ref", "HEAD").decode()
+
         with open(self._branches_file_name(), "r+") as f:
             # slurp in the file and check that the branch is not there already
             for line in f:
@@ -73,6 +73,12 @@ class Manager:
         return 0
 
 
+def run_cmd(*args: str) -> bytes:
+    return subprocess.run(
+        args,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(required=True, metavar="subcommand")
@@ -80,7 +86,11 @@ def main() -> int:
     add_parser = subparsers.add_parser(
         "add", help="Add new branch to list of tracked branches"
     )
-    add_parser.add_argument("branch_name")
+    add_parser.add_argument(
+        "branch_name",
+        nargs="?",
+        help="Name of branch to add. Defaults to the current branch.",
+    )
     add_parser.set_defaults(func=add_branch)
 
     remove_parser = subparsers.add_parser(
