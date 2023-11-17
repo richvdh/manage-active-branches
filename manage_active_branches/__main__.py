@@ -5,12 +5,37 @@ import errno
 import os
 import subprocess
 import sys
-from typing import TextIO
+from typing import TextIO, Iterable
+
+ACTIVE_BRANCH_NAME = "active_branches_base"
+
+
+class ManagerError(Exception):
+    def __init__(self, message: str, code: int):
+        super().__init__(message)
+        self.code = code
 
 
 class Manager:
-    def __init__(self):
-        self._git_dir = run_cmd("git", "rev-parse", "--path-format=absolute", "--git-dir")
+    def __init__(self, verbose: bool):
+        self._verbose = verbose
+        self._git_dir = self._run_cmd(
+            "git", "rev-parse", "--path-format=absolute", "--git-dir"
+        )
+
+    def _run_cmd(self, *args: str) -> bytes:
+        """Run the given command, check its exitcode, and return its stdout"""
+        if self._verbose:
+            print(f"> {' '.join(args)}", file=sys.stderr)
+        return subprocess.run(args, check=True, stdout=subprocess.PIPE).stdout.strip()
+
+    def assert_wc_clean(self):
+        """Check that the working copy is clean and throw an error if not"""
+        status = self._run_cmd("git", "status", "--untracked-files=no", "--porcelain")
+
+        # if there is any output, the WC is dirty
+        if status != b"":
+            raise ManagerError(f"Working copy has uncommitted changes", 1)
 
     def _branches_file_name(self) -> bytes:
         return os.path.join(self._git_dir, b"active-branches")
@@ -23,9 +48,16 @@ class Manager:
                 raise
             return open(self._branches_file_name(), "x+")
 
-    def add_branch(self, branch_name: str|None) -> int:
+    def _get_active_branches(self) -> Iterable[str]:
+        with self._open_or_create_branches_file() as f:
+            for line in f:
+                yield line.strip()
+
+    def add_branch(self, branch_name: str | None) -> int:
         if branch_name is None:
-            branch_name = run_cmd("git", "rev-parse", "--abbrev-ref", "HEAD").decode()
+            branch_name = self._run_cmd(
+                "git", "rev-parse", "--abbrev-ref", "HEAD"
+            ).decode()
 
         with open(self._branches_file_name(), "r+") as f:
             # slurp in the file and check that the branch is not there already
@@ -67,20 +99,33 @@ class Manager:
         return 0
 
     def ls_branches(self) -> int:
-        with self._open_or_create_branches_file() as f:
-            for line in f:
-                print(line, end="")
+        for branch in self._get_active_branches():
+            print(branch)
         return 0
 
+    def update(self) -> int:
+        """Create or update our tracking branch"""
+        self.assert_wc_clean()
 
-def run_cmd(*args: str) -> bytes:
-    return subprocess.run(
-        args,
-        stdout=subprocess.PIPE,
-    ).stdout.strip()
+        active_branches = list(self._get_active_branches())
+
+        # create the branch based on the common base of the branches for this repo
+        merge_base = self._run_cmd("git", "merge-base", "--octopus", *active_branches)
+        self._run_cmd("git", "checkout", "-B", ACTIVE_BRANCH_NAME, merge_base)
+
+        # merge the active branches into it
+        self._run_cmd("git", "merge", *active_branches)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="display commands before running them",
+    )
+
     subparsers = parser.add_subparsers(required=True, metavar="subcommand")
 
     add_parser = subparsers.add_parser(
@@ -104,9 +149,18 @@ def main() -> int:
     )
     ls_parser.set_defaults(func=ls_branches)
 
+    update_parser = subparsers.add_parser(
+        "update", help=f"Create, or update, {ACTIVE_BRANCH_NAME} branch"
+    )
+    update_parser.set_defaults(func=update)
+
     args = parser.parse_args()
-    manager = Manager()
-    return args.func(manager, args)
+    manager = Manager(verbose=args.verbose)
+    try:
+        return args.func(manager, args)
+    except ManagerError as e:
+        print(e, file=sys.stderr)
+        return e.code
 
 
 def add_branch(manager: Manager, args: argparse.Namespace) -> int:
@@ -119,6 +173,10 @@ def remove_branch(manager: Manager, args: argparse.Namespace) -> int:
 
 def ls_branches(manager: Manager, _args: argparse.Namespace) -> int:
     manager.ls_branches()
+
+
+def update(manager: Manager, _args: argparse.Namespace) -> int:
+    manager.update()
 
 
 if __name__ == "__main__":
