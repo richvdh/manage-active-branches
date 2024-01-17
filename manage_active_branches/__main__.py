@@ -5,7 +5,7 @@ import errno
 import os
 import subprocess
 import sys
-from typing import TextIO, Iterable
+from typing import TextIO, Iterable, List
 
 ACTIVE_BRANCH_NAME = "active_branches_base"
 
@@ -27,7 +27,9 @@ class Manager:
         """Run the given command, check its exitcode, and return its stdout"""
         if self._verbose:
             print(f"> {' '.join(args)}", file=sys.stderr)
-        return subprocess.run(args, check=True, stdout=subprocess.PIPE, **kwargs).stdout.strip()
+        return subprocess.run(
+            args, check=True, stdout=subprocess.PIPE, **kwargs
+        ).stdout.strip()
 
     def _run_cmd(self, *args: str, **kwargs) -> None:
         """Run the given command and check its exitcode"""
@@ -37,7 +39,9 @@ class Manager:
 
     def assert_wc_clean(self):
         """Check that the working copy is clean and throw an error if not"""
-        status = self._capture_cmd("git", "status", "--untracked-files=no", "--porcelain")
+        status = self._capture_cmd(
+            "git", "status", "--untracked-files=no", "--porcelain"
+        )
 
         # if there is any output, the WC is dirty
         if status != b"":
@@ -59,27 +63,26 @@ class Manager:
             for line in f:
                 yield line.strip()
 
-    def add_branch(self, branch_name: str | None) -> int:
-        if branch_name is None:
-            branch_name = self._capture_cmd(
+    def add_branch(self, branch_names: List[str]) -> int:
+        if len(branch_names) == 0:
+            branch_names = [self._capture_cmd(
                 "git", "rev-parse", "--abbrev-ref", "HEAD"
-            ).decode()
+            ).decode()]
 
         with open(self._branches_file_name(), "r+") as f:
             # slurp in the file and check that the branch is not there already
             for line in f:
                 line = line.strip()
-                if line == branch_name:
-                    print(f"Branch {branch_name} already tracked", file=sys.stderr)
+                if line in branch_names:
+                    print(f"Branch {line} already tracked", file=sys.stderr)
                     break
             else:
-                f.write(branch_name)
-                f.write("\n")
+                f.writelines(n + "\n" for n in branch_names)
 
         return 0
 
-    def remove_branch(self, branch_name: str) -> int:
-        found = False
+    def remove_branch(self, branch_names: List[str]) -> int:
+        unfound_branchnames = set(branch_names)
 
         # open the existing file for reading
         old_file = self._branches_file_name()
@@ -88,20 +91,22 @@ class Manager:
             new_file = old_file + b".new"
             with open(new_file, "w") as new_fh:
                 for line in old_fh.readlines():
-                    if line.strip() == branch_name:
-                        found = True
+                    branch = line.strip()
+                    if branch in unfound_branchnames:
+                        unfound_branchnames.remove(branch)
                     else:
                         new_fh.write(line)
 
         old_fh.close()
         new_fh.close()
 
-        if found:
+        unfound = next(iter(unfound_branchnames), None)
+        if unfound is None:
             # move the new file into place
             os.replace(new_file, old_file)
         else:
             os.remove(new_file)
-            print(f"Branch {branch_name} not previously tracked", file=sys.stderr)
+            print(f"Branch {unfound} not previously tracked", file=sys.stderr)
         return 0
 
     def ls_branches(self) -> int:
@@ -143,15 +148,19 @@ def main() -> int:
     )
     add_parser.add_argument(
         "branch_name",
-        nargs="?",
-        help="Name of branch to add. Defaults to the current branch.",
+        nargs="*",
+        help="Names of branches to add. Defaults to the current branch.",
     )
     add_parser.set_defaults(func=add_branch)
 
     remove_parser = subparsers.add_parser(
         "rm", help="Remove branch from list of tracked branches"
     )
-    remove_parser.add_argument("branch_name")
+    remove_parser.add_argument(
+        "branch_name",
+        nargs="+",
+        help="Names of branches to remove.",
+    )
     remove_parser.set_defaults(func=remove_branch)
 
     ls_parser = subparsers.add_parser(
