@@ -19,19 +19,25 @@ class ManagerError(Exception):
 class Manager:
     def __init__(self, verbose: bool):
         self._verbose = verbose
-        self._git_dir = self._run_cmd(
+        self._git_dir = self._capture_cmd(
             "git", "rev-parse", "--path-format=absolute", "--git-dir"
         )
 
-    def _run_cmd(self, *args: str) -> bytes:
+    def _capture_cmd(self, *args: str, **kwargs) -> bytes:
         """Run the given command, check its exitcode, and return its stdout"""
         if self._verbose:
             print(f"> {' '.join(args)}", file=sys.stderr)
-        return subprocess.run(args, check=True, stdout=subprocess.PIPE).stdout.strip()
+        return subprocess.run(args, check=True, stdout=subprocess.PIPE, **kwargs).stdout.strip()
+
+    def _run_cmd(self, *args: str, **kwargs) -> None:
+        """Run the given command and check its exitcode"""
+        if self._verbose:
+            print(f"> {' '.join(args)}", file=sys.stderr)
+        subprocess.run(args, check=True, **kwargs)
 
     def assert_wc_clean(self):
         """Check that the working copy is clean and throw an error if not"""
-        status = self._run_cmd("git", "status", "--untracked-files=no", "--porcelain")
+        status = self._capture_cmd("git", "status", "--untracked-files=no", "--porcelain")
 
         # if there is any output, the WC is dirty
         if status != b"":
@@ -55,7 +61,7 @@ class Manager:
 
     def add_branch(self, branch_name: str | None) -> int:
         if branch_name is None:
-            branch_name = self._run_cmd(
+            branch_name = self._capture_cmd(
                 "git", "rev-parse", "--abbrev-ref", "HEAD"
             ).decode()
 
@@ -110,7 +116,7 @@ class Manager:
         active_branches = list(self._get_active_branches())
 
         # create the branch based on the common base of the branches for this repo
-        merge_base = self._run_cmd("git", "merge-base", "--octopus", *active_branches)
+        merge_base = self._capture_cmd("git", "merge-base", "--octopus", *active_branches).decode()
         self._run_cmd("git", "checkout", "-B", ACTIVE_BRANCH_NAME, merge_base)
 
         # merge the active branches into it
