@@ -122,7 +122,9 @@ class Manager:
 
         if not continue_merge:
             # create the branch based on the common base of the branches for this repo
-            merge_base = self._capture_cmd("git", "merge-base", "--octopus", *active_branches).decode()
+            merge_base = self._capture_cmd(
+                "git", "merge-base", "--octopus", *active_branches
+            ).decode()
             self._run_cmd("git", "checkout", "-B", ACTIVE_BRANCH_NAME, merge_base)
 
         # merge each of the active branches into it in turn.
@@ -183,7 +185,7 @@ def main() -> int:
     manager = Manager(verbose=args.verbose)
 
     # Default to 'ls' if no subparser specified
-    func = getattr(args, 'func', ls_branches)
+    func = getattr(args, "func", ls_branches)
     try:
         return func(manager, args)
     except ManagerError as e:
@@ -192,19 +194,19 @@ def main() -> int:
 
 
 def add_branch(manager: Manager, args: argparse.Namespace) -> int:
-    manager.add_branch(args.branch_name)
+    return manager.add_branch(args.branch_name)
 
 
 def remove_branch(manager: Manager, args: argparse.Namespace) -> int:
-    manager.remove_branch(args.branch_name)
+    return manager.remove_branch(args.branch_name)
 
 
 def ls_branches(manager: Manager, _args: argparse.Namespace) -> int:
-    manager.ls_branches()
+    return manager.ls_branches()
 
 
 def update(manager: Manager, args: argparse.Namespace) -> int:
-    manager.update(continue_merge=args.continue_merge)
+    return manager.update(continue_merge=args.continue_merge)
 
 
 if __name__ == "__main__":
