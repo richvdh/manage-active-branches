@@ -109,18 +109,22 @@ class Manager:
             print(branch)
         return 0
 
-    def update(self) -> int:
+    def update(self, continue_merge: bool) -> int:
         """Create or update our tracking branch"""
         self.assert_wc_clean()
 
         active_branches = list(self._get_active_branches())
 
-        # create the branch based on the common base of the branches for this repo
-        merge_base = self._capture_cmd("git", "merge-base", "--octopus", *active_branches).decode()
-        self._run_cmd("git", "checkout", "-B", ACTIVE_BRANCH_NAME, merge_base)
+        if not continue_merge:
+            # create the branch based on the common base of the branches for this repo
+            merge_base = self._capture_cmd("git", "merge-base", "--octopus", *active_branches).decode()
+            self._run_cmd("git", "checkout", "-B", ACTIVE_BRANCH_NAME, merge_base)
 
-        # merge the active branches into it
-        self._run_cmd("git", "merge", *active_branches)
+        # merge each of the active branches into it in turn.
+        for branch_name in active_branches:
+            print(f"Merging {branch_name}", file=sys.stderr)
+            self._run_cmd("git", "merge", "--no-edit", branch_name)
+            print("\n-----\n")
 
 
 def main() -> int:
@@ -158,6 +162,12 @@ def main() -> int:
     update_parser = subparsers.add_parser(
         "update", help=f"Create, or update, {ACTIVE_BRANCH_NAME} branch"
     )
+    update_parser.add_argument(
+        "--continue",
+        action="store_true",
+        dest="continue_merge",
+        help="Continue a previous update (do not reset branch",
+    )
     update_parser.set_defaults(func=update)
 
     args = parser.parse_args()
@@ -184,8 +194,8 @@ def ls_branches(manager: Manager, _args: argparse.Namespace) -> int:
     manager.ls_branches()
 
 
-def update(manager: Manager, _args: argparse.Namespace) -> int:
-    manager.update()
+def update(manager: Manager, args: argparse.Namespace) -> int:
+    manager.update(continue_merge=args.continue_merge)
 
 
 if __name__ == "__main__":
