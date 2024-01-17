@@ -126,7 +126,7 @@ def main() -> int:
         help="display commands before running them",
     )
 
-    subparsers = parser.add_subparsers(required=True, metavar="subcommand")
+    subparsers = parser.add_subparsers(metavar="subcommand")
 
     add_parser = subparsers.add_parser(
         "add", help="Add new branch to list of tracked branches"
@@ -156,8 +156,11 @@ def main() -> int:
 
     args = parser.parse_args()
     manager = Manager(verbose=args.verbose)
+
+    # Default to 'ls' if no subparser specified
+    func = getattr(args, 'func', ls_branches)
     try:
-        return args.func(manager, args)
+        return func(manager, args)
     except ManagerError as e:
         print(e, file=sys.stderr)
         return e.code
